@@ -62,12 +62,27 @@ const SYNC_STATUS={offline:"offline",syncing:"syncing",synced:"synced",error:"er
 
 /* ROLES */
 const ROLES={
-  sponsor:{label:"Sponsor",sub:"Patrono / Project Owner",color:"#14B8A6",icon:"👑",perms:{manageUsers:true,deleteProject:true,createProject:true,viewAll:true,editContent:true,boomManageBoards:true,boomViewAll:true,boomDeleteAny:true}},
-  pm:{label:"PM",sub:"Coordinador / Scrum Master",color:"#3A7BD5",icon:"🎯",perms:{manageUsers:false,deleteProject:false,createProject:true,viewAll:false,editContent:true,boomManageBoards:true,boomViewAll:false,boomDeleteAny:false}},
-  team:{label:"Team",sub:"Equipo",color:"#27AE60",icon:"🔧",perms:{manageUsers:false,deleteProject:false,createProject:false,viewAll:false,editContent:true,boomManageBoards:false,boomViewAll:false,boomDeleteAny:false}},
+  sponsor:{label:"Sponsor",sub:"Patrono / Project Owner",color:"#14B8A6",icon:"👑",perms:{manageUsers:true,deleteProject:true,createProject:true,viewAll:true,editContent:true,boomManageBoards:true,boomViewAll:true,boomDeleteAny:true,editReferentials:true}},
+  pm:{label:"PM",sub:"Coordinador / Scrum Master",color:"#3A7BD5",icon:"🎯",perms:{manageUsers:false,deleteProject:false,createProject:true,viewAll:false,editContent:true,boomManageBoards:true,boomViewAll:false,boomDeleteAny:false,editReferentials:false}},
+  team:{label:"Team",sub:"Equipo",color:"#27AE60",icon:"🔧",perms:{manageUsers:false,deleteProject:false,createProject:false,viewAll:false,editContent:true,boomManageBoards:false,boomViewAll:false,boomDeleteAny:false,editReferentials:false}},
 };
 const can=(user,p)=>user&&ROLES[user.role]?.perms[p];
 const DEFAULT_USERS=[{id:"u_admin",username:"admin",password:"spms2024",name:"Administrador",role:"sponsor",created:new Date().toISOString()}];
+
+/* REFERENTIALS CORPORATIVOS — inputs de negocio compartidos por todos los proyectos.
+   Solo editables por el sponsor (admin). Visibles en modo lectura para todos.
+   Persistencia: window.storage clave "spms_v2_referentials". */
+const REF_DEFS=[
+  {id:"business_case",icon:"📄",name:"Business Case",defDesc:"Input externo / documento de negocio. Justificación comercial del proyecto, análisis costo-beneficio, necesidad organizacional."},
+  {id:"benefits_plan",icon:"📄",name:"Benefits Management Plan",defDesc:"Input externo / documento de negocio. Plan de gestión de beneficios esperados del proyecto y métricas de éxito."},
+  {id:"agreements",icon:"📄",name:"Agreements",defDesc:"Input externo / documento de negocio. Contratos, acuerdos comerciales, SLAs y compromisos contractuales."},
+  {id:"eef",icon:"🌐",name:"Enterprise Environmental Factors",defDesc:"Factores externos al proyecto (regulaciones, cultura, mercado, infraestructura)."},
+  {id:"opa",icon:"🏢",name:"Organizational Process Assets",defDesc:"Activos internos de la organización (plantillas, procedimientos, lecciones históricas)."},
+];
+const DEFAULT_REFERENTIALS=REF_DEFS.reduce((acc,r)=>{
+  acc[r.id]={desc:r.defDesc,links:[],files:[],updatedAt:null,updatedBy:null};
+  return acc;
+},{});
 
 /* BOOM */
 const PRIO={
@@ -102,7 +117,7 @@ const PF=[
   {group:"Herramientas",fields:[{k:"schedule_tool",l:"Herramienta cronograma"},{k:"pmis",l:"PMIS"}]},
 ];
 
-/* T&T */
+/* Técnicas y Herramientas (Tools) */
 const TT={
   expertJudgment:{n:"Expert Judgment",t:"Técnica",how:"1. Identificar expertise necesario.\n2. Fuentes: equipo, consultores, asociaciones.\n3. Preparar contexto y preguntas.\n4. Conducir sesión.\n5. Integrar juicio con otros datos.\n6. Documentar razonamiento."},
   meetings:{n:"Meetings",t:"Técnica",how:"1. Convocar con objetivo + agenda ≥24 h antes.\n2. Designar facilitador y secretario.\n3. Apertura: objetivo + time-boxing.\n4. Facilitar participación equitativa.\n5. Cierre: acuerdos + acciones.\n6. Acta ≤24 h post-reunión."},
@@ -1495,6 +1510,63 @@ body,html{background:#04141A;color:#CDD6E4;font-family:'Outfit',sans-serif}
 .tpl-btn-cancel{background:transparent;color:#6B7E94;border:1px solid #1C3A40;padding:8px 14px;border-radius:4px;font-size:12px;cursor:pointer;font-family:'Outfit',sans-serif}
 .tpl-copy-toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#27AE60;color:#FFF;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;z-index:300;box-shadow:0 4px 12px #00000066;font-family:'Outfit',sans-serif;pointer-events:none}
 /* ═══════════════════════════════════════════
+   FULL OUTPUT EDITOR — Pantalla completa
+═══════════════════════════════════════════ */
+.foe-ov{position:fixed;inset:0;background:#04141A;z-index:250;display:flex;flex-direction:column;font-family:'Outfit',sans-serif;animation:foeFadeIn .15s ease-out}
+@keyframes foeFadeIn{from{opacity:0}to{opacity:1}}
+.foe-hdr{background:#071A22;border-bottom:1px solid #14B8A644;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-shrink:0}
+.foe-hdr-left{display:flex;align-items:center;gap:14px;min-width:0;flex:1}
+.foe-back{background:transparent;border:1px solid #14B8A644;color:#14B8A6;padding:7px 14px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:600;font-family:inherit;white-space:nowrap;transition:all .15s}
+.foe-back:hover{background:#14B8A622}
+.foe-crumb{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.foe-crumb-proc{font-size:12px;color:#6B8A87;font-family:'JetBrains Mono',monospace;font-weight:500}
+.foe-crumb-sep{color:#1C3A40;font-size:14px}
+.foe-crumb-out{font-size:14px;color:#E8F4F1;font-weight:600;font-family:'Syne',sans-serif}
+.foe-hdr-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.foe-proj{font-size:12px;color:#8BA8A3;background:#0A1E30;padding:5px 10px;border-radius:4px;border:1px solid #14B8A633;white-space:nowrap}
+.foe-cancel{background:transparent;color:#6B8A87;border:1px solid #1C3A40;padding:7px 14px;border-radius:4px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600}
+.foe-cancel:hover{border-color:#6B8A87;color:#E8F4F1}
+.foe-save{background:#14B8A6;color:#050C15;border:none;padding:8px 16px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:700;font-family:inherit;white-space:nowrap}
+.foe-save:hover{background:#5EEAD4}
+.foe-body{flex:1;display:grid;grid-template-columns:minmax(220px,260px) 1fr;gap:0;overflow:hidden;min-height:0}
+.foe-side{background:#050C15;border-right:1px solid #14B8A622;padding:18px 16px;overflow-y:auto}
+.foe-side-ti{font-family:'JetBrains Mono',monospace;font-size:12px;color:#14B8A6;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:600}
+.foe-side-hint{font-size:12px;color:#6B8A87;line-height:1.5;margin-bottom:14px}
+.foe-side-list{list-style:none;padding:0;margin:0;counter-reset:fsc}
+.foe-side-li{counter-increment:fsc;font-size:13px;color:#CDD6E4;padding:8px 10px 8px 32px;margin-bottom:4px;background:#0A1E30;border-left:2px solid #14B8A644;border-radius:0 4px 4px 0;position:relative;line-height:1.45}
+.foe-side-li::before{content:counter(fsc);position:absolute;left:8px;top:8px;width:18px;height:18px;background:#14B8A622;color:#14B8A6;border-radius:50%;text-align:center;line-height:18px;font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.foe-main{display:flex;flex-direction:column;padding:14px 20px;min-height:0;overflow:hidden}
+.foe-ta{flex:1;width:100%;background:#050C15;border:1px solid #14B8A633;border-radius:6px;padding:18px 20px;color:#E8F4F1;font-size:14px;font-family:'JetBrains Mono',monospace;line-height:1.7;resize:none;outline:none;transition:border-color .15s;min-height:0}
+.foe-ta:focus{border-color:#14B8A6}
+.foe-stat{margin-top:8px;font-size:12px;color:#6B8A87;text-align:right;font-family:'JetBrains Mono',monospace}
+@media (max-width:900px){
+  .foe-body{grid-template-columns:1fr}
+  .foe-side{display:none}
+  .foe-hdr{flex-wrap:wrap;padding:10px 14px}
+  .foe-main{padding:12px 14px}
+}
+/* ═══════════════════════════════════════════
+   OVERWRITE CONFIRM — Sobreescritura de output
+═══════════════════════════════════════════ */
+.ow-ov{position:fixed;inset:0;background:#000000CC;z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;font-family:'Outfit',sans-serif;animation:foeFadeIn .12s ease-out}
+.ow-modal{background:#071A22;border:1px solid #F39C12;border-radius:8px;max-width:560px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 10px 40px #000000AA}
+.ow-hdr{padding:16px 20px;border-bottom:1px solid #F39C1233;display:flex;align-items:center;gap:12px;background:#F39C1211;border-radius:8px 8px 0 0}
+.ow-ic{font-size:24px;flex-shrink:0}
+.ow-ti{font-size:16px;font-weight:700;color:#F39C12;font-family:'Syne',sans-serif;flex:1}
+.ow-body{padding:16px 20px;overflow-y:auto;flex:1}
+.ow-p{font-size:13px;color:#CDD6E4;line-height:1.6;margin:0 0 10px}
+.ow-p strong{color:#E8F4F1;font-weight:600}
+.ow-p em{color:#14B8A6;font-style:normal}
+.ow-preview{margin-top:14px}
+.ow-preview-lbl{font-size:12px;color:#F39C12;text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:6px;font-family:'JetBrains Mono',monospace}
+.ow-preview-box{background:#050C15;border:1px solid #1C3A40;border-left:3px solid #F39C12;border-radius:4px;padding:10px 12px;font-size:12px;color:#8BA8A3;font-family:'JetBrains Mono',monospace;line-height:1.55;max-height:140px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+.ow-preview-more{color:#6B8A87;font-style:italic}
+.ow-ftr{padding:14px 20px;border-top:1px solid #1C3A40;display:flex;justify-content:flex-end;gap:10px;background:#050C15;border-radius:0 0 8px 8px}
+.ow-cancel{background:transparent;color:#8BA8A3;border:1px solid #1C3A40;padding:8px 18px;border-radius:4px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600}
+.ow-cancel:hover{border-color:#8BA8A3;color:#E8F4F1}
+.ow-confirm{background:#E74C3C;color:#FFF;border:none;padding:8px 18px;border-radius:4px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:700}
+.ow-confirm:hover{background:#C0392B}
+/* ═══════════════════════════════════════════
    M&C — MONITOREO Y CONTROL
 ═══════════════════════════════════════════ */
 .mc-wrap{padding:12px 16px}
@@ -2557,6 +2629,8 @@ export default function App(){
   const [procTab,setProcTab]=useState(0);
   const [editNK,setEditNK]=useState(null);
   const [editNV,setEditNV]=useState("");
+  const [fullEditorCtx,setFullEditorCtx]=useState(null); // {nk, procId, procName, outName, outFields} | null
+  const [overwriteConfirm,setOverwriteConfirm]=useState(null); // {nk, newValue, outName, procId, procName} | null
   const [openLib,setOpenLib]=useState(null);
   const [libQ,setLibQ]=useState("");
   const [libT,setLibT]=useState("Todos");
@@ -2564,6 +2638,11 @@ export default function App(){
   const [tmplQ,setTmplQ]=useState("");
   const [tmplCat,setTmplCat]=useState("All");
   const [coorpSec,setCoorpSec]=useState("identity");
+  const [refs,setRefs]=useState(DEFAULT_REFERENTIALS);
+  const [refEditId,setRefEditId]=useState(null);
+  const [refForm,setRefForm]=useState({desc:"",linkLabel:"",linkUrl:""});
+  const [refFileErr,setRefFileErr]=useState(null);
+  const [refSavedFlash,setRefSavedFlash]=useState(null);
   const [tplModal,setTplModal]=useState(null);
   const [tplCopied,setTplCopied]=useState(false);
   const [mcEdit,setMcEdit]=useState(false);
@@ -2607,6 +2686,29 @@ export default function App(){
   const openActLogs=useMemo(()=>openAct&&openAct!=="new"?(boom.logs[openAct]||[]).slice().reverse():[],[boom.logs,openAct]);
 
   /* Auto-pull cuando se completa login con Supabase */
+  /* Atajos de teclado del editor de output en pantalla completa.
+     Esc = cerrar sin guardar · Ctrl/Cmd+S = guardar y cerrar.
+     Solo activo cuando fullEditorCtx está abierto. */
+  useEffect(()=>{
+    if(!fullEditorCtx)return;
+    const handler=(e)=>{
+      if(e.key==="Escape"){
+        e.preventDefault();
+        // Si el diálogo de sobreescritura está abierto, Esc lo cierra a él primero
+        if(overwriteConfirm){setOverwriteConfirm(null);return;}
+        setFullEditorCtx(null);
+      }
+      if((e.ctrlKey||e.metaKey)&&(e.key==="s"||e.key==="S")){
+        e.preventDefault();
+        if(overwriteConfirm)return; // no reentrar mientras se confirma
+        const ok=attemptSaveNote(fullEditorCtx.nk,editNV,fullEditorCtx.outName,fullEditorCtx.procId,fullEditorCtx.procName);
+        if(ok)setFullEditorCtx(null);
+      }
+    };
+    window.addEventListener("keydown",handler);
+    return()=>window.removeEventListener("keydown",handler);
+  },[fullEditorCtx,editNV,overwriteConfirm]);
+
   useEffect(()=>{
     if(sbReady&&cu&&authChecked&&_sb){
       (async()=>{
@@ -2757,6 +2859,16 @@ export default function App(){
         try{const r=await window.storage.get("spms_v2_notes");if(r?.value&&mounted)setNotes(JSON.parse(r.value));}catch{}
         try{const r=await window.storage.get("spms_v2_tmpl");if(r?.value&&mounted)setTmpl(JSON.parse(r.value));}catch{}
         try{const r=await window.storage.get("spms_boom");if(r?.value&&mounted){const d=JSON.parse(r.value);setBoom(d);}}catch{}
+        try{
+          const r=await window.storage.get("spms_v2_referentials");
+          if(r?.value&&mounted){
+            const saved=JSON.parse(r.value);
+            // Merge con defaults para que ids nuevos aparezcan sin borrar datos viejos
+            const merged={...DEFAULT_REFERENTIALS};
+            REF_DEFS.forEach(d=>{if(saved[d.id])merged[d.id]={...merged[d.id],...saved[d.id]};});
+            setRefs(merged);
+          }
+        }catch{}
       }catch(globalErr){
         console.error("Error fatal en carga inicial:",globalErr);
       }finally{
@@ -2791,6 +2903,86 @@ export default function App(){
   };
   const saveNotes=async n=>{setNotes(n);try{await window.storage.set("spms_v2_notes",JSON.stringify(n));}catch{}};
   const saveTmplAll=async t=>{setTmpl(t);try{await window.storage.set("spms_v2_tmpl",JSON.stringify(t));}catch{}};
+
+  /* ─── REFERENTIALS (sponsor/admin only) ─── */
+  const saveRefs=async(next)=>{
+    setRefs(next);
+    try{await window.storage.set("spms_v2_referentials",JSON.stringify(next));}catch{}
+  };
+  const refBeginEdit=(id)=>{
+    if(!can(cu,"editReferentials"))return;
+    const r=refs[id]||DEFAULT_REFERENTIALS[id];
+    setRefEditId(id);
+    setRefForm({desc:r.desc||"",linkLabel:"",linkUrl:""});
+    setRefFileErr(null);
+  };
+  const refSaveEdit=async()=>{
+    if(!refEditId||!can(cu,"editReferentials"))return;
+    const prev=refs[refEditId]||DEFAULT_REFERENTIALS[refEditId];
+    const next={...refs,[refEditId]:{...prev,desc:refForm.desc||"",updatedAt:new Date().toISOString(),updatedBy:cu?.name||cu?.username||"admin"}};
+    await saveRefs(next);
+    setRefSavedFlash(refEditId);setTimeout(()=>setRefSavedFlash(null),2000);
+    setRefEditId(null);
+  };
+  const refAddLink=async()=>{
+    if(!refEditId||!can(cu,"editReferentials"))return;
+    const label=(refForm.linkLabel||"").trim();
+    const url=(refForm.linkUrl||"").trim();
+    if(!label||!url)return;
+    // Validar URL básica
+    if(!/^https?:\/\//i.test(url)){setRefFileErr("La URL debe iniciar con http:// o https://");return;}
+    const prev=refs[refEditId]||DEFAULT_REFERENTIALS[refEditId];
+    const newLink={id:"lnk_"+Date.now(),label,url,addedAt:new Date().toISOString()};
+    const next={...refs,[refEditId]:{...prev,links:[...(prev.links||[]),newLink],updatedAt:new Date().toISOString(),updatedBy:cu?.name||cu?.username||"admin"}};
+    await saveRefs(next);
+    setRefForm(f=>({...f,linkLabel:"",linkUrl:""}));
+    setRefFileErr(null);
+  };
+  const refRemoveLink=async(refId,linkId)=>{
+    if(!can(cu,"editReferentials"))return;
+    const prev=refs[refId]||DEFAULT_REFERENTIALS[refId];
+    const next={...refs,[refId]:{...prev,links:(prev.links||[]).filter(l=>l.id!==linkId),updatedAt:new Date().toISOString(),updatedBy:cu?.name||cu?.username||"admin"}};
+    await saveRefs(next);
+  };
+  const refAddFile=async(e)=>{
+    if(!refEditId||!can(cu,"editReferentials"))return;
+    const file=e.target.files&&e.target.files[0];e.target.value="";
+    if(!file)return;
+    // Límite 2 MB por archivo (base64 en localStorage tiene límite ~5MB por clave)
+    const MAX=2*1024*1024;
+    if(file.size>MAX){setRefFileErr("Archivo demasiado grande. Máximo 2 MB por PDF.");return;}
+    if(file.type!=="application/pdf"&&!file.name.toLowerCase().endsWith(".pdf")){setRefFileErr("Solo se aceptan archivos PDF.");return;}
+    try{
+      const base64=await new Promise((resolve,reject)=>{
+        const r=new FileReader();
+        r.onload=()=>resolve(r.result);
+        r.onerror=()=>reject(new Error("No se pudo leer el archivo"));
+        r.readAsDataURL(file);
+      });
+      const prev=refs[refEditId]||DEFAULT_REFERENTIALS[refEditId];
+      const newFile={id:"file_"+Date.now(),name:file.name,size:file.size,dataUrl:base64,addedAt:new Date().toISOString()};
+      const next={...refs,[refEditId]:{...prev,files:[...(prev.files||[]),newFile],updatedAt:new Date().toISOString(),updatedBy:cu?.name||cu?.username||"admin"}};
+      await saveRefs(next);
+      setRefFileErr(null);
+    }catch(err){
+      setRefFileErr("Error al subir: "+(err?.message||"desconocido"));
+    }
+  };
+  const refRemoveFile=async(refId,fileId)=>{
+    if(!can(cu,"editReferentials"))return;
+    const prev=refs[refId]||DEFAULT_REFERENTIALS[refId];
+    const next={...refs,[refId]:{...prev,files:(prev.files||[]).filter(f=>f.id!==fileId),updatedAt:new Date().toISOString(),updatedBy:cu?.name||cu?.username||"admin"}};
+    await saveRefs(next);
+  };
+  const refDownloadFile=(file)=>{
+    try{
+      const a=document.createElement("a");
+      a.href=file.dataUrl;a.download=file.name;
+      document.body.appendChild(a);a.click();
+      document.body.removeChild(a);
+    }catch(e){console.error(e);}
+  };
+  const fmtFileSize=(b)=>{if(!b)return"—";if(b<1024)return b+" B";if(b<1048576)return(b/1024).toFixed(1)+" KB";return(b/1048576).toFixed(2)+" MB";};
   const saveBoom=async b=>{setBoom(b);try{await window.storage.set("spms_boom",JSON.stringify(b));}catch{}};
 
   /* ─ SUPABASE CONFIG & AUTH ─ */
@@ -2989,6 +3181,34 @@ export default function App(){
   };
 
   const saveNote=async(k,v)=>{const u={...notes,[activeId]:{...aN,[k]:v}};await saveNotes(u);setEditNK(null);};
+
+  /* Guardado de output con confirmación.
+     Si ya existe contenido previo en ese output del proyecto activo y es distinto
+     al nuevo, abrimos un diálogo de confirmación. Si no hay contenido previo o
+     es idéntico, guardamos directo sin preguntar. Devuelve `true` si procedió,
+     `false` si se bloqueó (sin proyecto activo) o se envió a confirmar. */
+  const attemptSaveNote=(nk,newValue,outName,procId,procName)=>{
+    if(!activeId){
+      alert("⚠ No hay proyecto activo. Selecciona un proyecto antes de guardar el output.");
+      return false;
+    }
+    const existing=(aN[nk]||"").trim();
+    if(existing&&existing!==newValue.trim()){
+      setOverwriteConfirm({nk,newValue,outName,procId,procName});
+      return false;
+    }
+    saveNote(nk,newValue);
+    return true;
+  };
+
+  const confirmOverwrite=()=>{
+    if(!overwriteConfirm)return;
+    saveNote(overwriteConfirm.nk,overwriteConfirm.newValue);
+    setOverwriteConfirm(null);
+    setFullEditorCtx(null);
+  };
+  const cancelOverwrite=()=>setOverwriteConfirm(null);
+
   const setTF=(tid,fi,v)=>{const u={...tmpl,[activeId]:{...aT,[tid]:{...(aT[tid]||{}),[fi]:v}}};setTmpl(u);};
   const saveTF=async tid=>{await saveTmplAll({...tmpl,[activeId]:{...aT}});setTmplSaved(s=>({...s,[tid]:true}));setTimeout(()=>setTmplSaved(s=>({...s,[tid]:false})),2000);};
 
@@ -3002,7 +3222,7 @@ export default function App(){
     {id:"boom",l:"⚡ BOOM"},
     {id:"principles",l:"Principios"},
     {id:"pmbok",l:"40 Procesos"},
-    {id:"tt",l:"T&T"},
+    {id:"tt",l:"Técnicas y Herramientas (Tools)"},
     {id:"plantillas",l:"📋 Plantillas"},
     {id:"mc",l:"📊 M&C"},
     ...(cu&&can(cu,"manageUsers")?[{id:"usuarios",l:"👥 Usuarios"}]:[]),
@@ -3064,17 +3284,32 @@ export default function App(){
     </div>
   );
 
-  /* Note Editor — invocado como función, no componente (fix bug cursor) */
-  const noteEditor=(nk)=>{
-    const isE=editNK===nk;
+  /* Note Editor — muestra el valor actual y un botón que abre el editor fullscreen.
+     La edición completa se hace en FullOutputEditor (modal pantalla completa). */
+  const noteEditor=(nk,proc,out)=>{
     const val=aN[nk]||"";
     if(!activeId)return null;
+    const openFullEditor=()=>{
+      setFullEditorCtx({
+        nk,
+        procId:proc?.id||"",
+        procName:proc?.n||"",
+        outName:out?.n||"Output",
+        outFields:out?.tpl||[],
+      });
+      setEditNV(val);
+    };
     return(
       <div>
-        <div className="nl"><span>📝 Datos del proyecto</span>{!isE&&<button className="ebt" onClick={()=>{setEditNK(nk);setEditNV(val);}}>✏️ Editar</button>}</div>
-        {isE?(<><textarea className="nta" value={editNV} onChange={e=>setEditNV(e.target.value)} placeholder="Ingresa los datos de tu proyecto para este output..."/>
-          <div className="nacts"><button className="nsav" onClick={()=>saveNote(nk,editNV)}>💾 Guardar</button><button className="ncnc" onClick={()=>setEditNK(null)}>Cancelar</button></div>
-        </>):(val?<div className="nv">{val}</div>:<div className="ne">Sin datos — usa ✏️ Editar para completar.</div>)}
+        <div className="nl">
+          <span>📝 Datos del proyecto</span>
+          <button className="ebt" onClick={openFullEditor}>
+            {val?"✏️ Editar en pantalla completa":"✏️ Escribir en pantalla completa"}
+          </button>
+        </div>
+        {val
+          ? <div className="nv">{val}</div>
+          : <div className="ne">Sin datos — usa el botón arriba para redactar este output.</div>}
       </div>
     );
   };
@@ -3259,7 +3494,17 @@ export default function App(){
 
   const useTplAsBase=()=>{
     if(!tplModal||!activeId)return;
-    setEditNK(tplModal.nk);setEditNV(tplModal.text);
+    // Encontrar proceso y output completos para pasarlos al editor fullscreen
+    const proc=PR.find(p=>p.id===tplModal.procId);
+    const out=proc?.out?.[tplModal.outIdx];
+    setFullEditorCtx({
+      nk:tplModal.nk,
+      procId:tplModal.procId,
+      procName:tplModal.procName,
+      outName:tplModal.outName,
+      outFields:out?.tpl||[],
+    });
+    setEditNV(tplModal.text);
     setTplModal(null);
   };
 
@@ -3277,11 +3522,29 @@ export default function App(){
   };
 
   /* ─ PDF / INPUTS HELPERS ─ */
+  // Los 3 inputs de negocio (Business Case, Benefits Plan, Agreements) + EEF + OPA
+  // ahora leen su descripción desde refs (editado por admin en Coorp › Referenciales)
+  const refByName={
+    "Business Case":"business_case",
+    "Benefits Management Plan":"benefits_plan",
+    "Agreements":"agreements",
+  };
   const parseInput=(s)=>{
-    if(s==="EEF")return{type:"eef",name:"Enterprise Environmental Factors",src:"Factores externos al proyecto (regulaciones, cultura, mercado, infraestructura)",icon:"🌐"};
-    if(s==="OPA")return{type:"opa",name:"Organizational Process Assets",src:"Activos internos de la organización (plantillas, procedimientos, lecciones históricas)",icon:"🏢"};
+    if(s==="EEF"){
+      const r=refs.eef||DEFAULT_REFERENTIALS.eef;
+      return{type:"eef",name:"Enterprise Environmental Factors",src:r.desc,icon:"🌐",refId:"eef"};
+    }
+    if(s==="OPA"){
+      const r=refs.opa||DEFAULT_REFERENTIALS.opa;
+      return{type:"opa",name:"Organizational Process Assets",src:r.desc,icon:"🏢",refId:"opa"};
+    }
     const refMatch=s.match(/^@(\d+\.\d+)\s+(.+)$/);
     if(refMatch)return{type:"ref",name:refMatch[2],src:"Output del proceso "+refMatch[1],procId:refMatch[1],icon:"🔗"};
+    // Inputs que coinciden con un referencial de negocio (Business Case, etc.)
+    if(refByName[s]){
+      const r=refs[refByName[s]]||DEFAULT_REFERENTIALS[refByName[s]];
+      return{type:"ext",name:s,src:r.desc,icon:"📄",refId:refByName[s]};
+    }
     return{type:"ext",name:s,src:"Input externo / documento de negocio",icon:"📄"};
   };
 
@@ -3586,6 +3849,101 @@ ${procsHtml}
         </div>
       )}
       {tplCopied&&<div className="tpl-copy-toast">✓ Template copiado al portapapeles</div>}
+
+      {/* Editor de Output — Pantalla Completa.
+          Se abre al presionar "Editar en pantalla completa" en la sub-tab Outputs
+          o "Usar como base en el editor" desde el modal de Template.
+          Esc para cerrar, Ctrl/Cmd+S para guardar. */}
+      {fullEditorCtx&&(
+        <div className="foe-ov">
+          <div className="foe-hdr">
+            <div className="foe-hdr-left">
+              <button className="foe-back" onClick={()=>setFullEditorCtx(null)} title="Volver (Esc)">← Volver</button>
+              <div className="foe-crumb">
+                <span className="foe-crumb-proc">Proceso {fullEditorCtx.procId} · {fullEditorCtx.procName}</span>
+                <span className="foe-crumb-sep">›</span>
+                <span className="foe-crumb-out">📤 {fullEditorCtx.outName}</span>
+              </div>
+            </div>
+            <div className="foe-hdr-right">
+              <span className="foe-proj">{activeProj?"🏗 "+activeProj.name:"⚠ Sin proyecto"}</span>
+              <button className="foe-cancel" onClick={()=>setFullEditorCtx(null)}>Cancelar</button>
+              <button className="foe-save" onClick={()=>{
+                const ok=attemptSaveNote(fullEditorCtx.nk,editNV,fullEditorCtx.outName,fullEditorCtx.procId,fullEditorCtx.procName);
+                if(ok)setFullEditorCtx(null);
+              }}>💾 Guardar y cerrar</button>
+            </div>
+          </div>
+
+          <div className="foe-body">
+            {(fullEditorCtx.outFields||[]).length>0&&(
+              <aside className="foe-side">
+                <div className="foe-side-ti">Campos del documento</div>
+                <div className="foe-side-hint">Referencia PMBOK® para estructurar tu redacción</div>
+                <ol className="foe-side-list">
+                  {fullEditorCtx.outFields.map((f,i)=>(
+                    <li key={i} className="foe-side-li">{f}</li>
+                  ))}
+                </ol>
+                <div className="foe-side-hint" style={{marginTop:"16px",paddingTop:"12px",borderTop:"1px solid #14B8A633"}}>
+                  💡 Atajos: <br/>
+                  <strong>Esc</strong> cerrar sin guardar<br/>
+                  <strong>Ctrl/Cmd + S</strong> guardar y cerrar
+                </div>
+              </aside>
+            )}
+            <div className="foe-main">
+              <textarea
+                className="foe-ta"
+                value={editNV}
+                onChange={e=>setEditNV(e.target.value)}
+                autoFocus
+                placeholder={`Redacta el output "${fullEditorCtx.outName}" con los datos reales del proyecto...\n\nUsa los campos del documento del panel lateral como guía de estructura.`}
+              />
+              <div className="foe-stat">
+                {editNV.length.toLocaleString()} caracteres · {editNV.trim()?editNV.trim().split(/\s+/).length.toLocaleString():0} palabras
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diálogo de confirmación de sobreescritura de output.
+          Se abre cuando se intenta guardar un output que ya tiene contenido
+          previo en el proyecto activo. Muestra preview del contenido actual
+          y pide confirmación explícita antes de reemplazar. */}
+      {overwriteConfirm&&(
+        <div className="ow-ov" onClick={e=>{if(e.target.className==="ow-ov")cancelOverwrite();}}>
+          <div className="ow-modal" role="dialog" aria-labelledby="ow-title">
+            <div className="ow-hdr">
+              <span className="ow-ic">⚠</span>
+              <div id="ow-title" className="ow-ti">Reemplazar contenido existente</div>
+            </div>
+            <div className="ow-body">
+              <p className="ow-p">
+                El output <strong>{overwriteConfirm.outName}</strong> del proceso <strong>{overwriteConfirm.procId}</strong>
+                {overwriteConfirm.procName&&<> — <em>{overwriteConfirm.procName}</em></>}
+                {" "}ya tiene contenido guardado en el proyecto <strong>{activeProj?.name||"activo"}</strong>.
+              </p>
+              <p className="ow-p">
+                Si confirmas, <strong>el contenido actual será reemplazado</strong> por el texto que acabas de redactar. Esta acción no se puede deshacer.
+              </p>
+              <div className="ow-preview">
+                <div className="ow-preview-lbl">Contenido actual (se perderá):</div>
+                <div className="ow-preview-box">
+                  {((aN[overwriteConfirm.nk]||"").slice(0,300))}
+                  {(aN[overwriteConfirm.nk]||"").length>300&&<span className="ow-preview-more"> …({(aN[overwriteConfirm.nk]||"").length-300} caracteres más)</span>}
+                </div>
+              </div>
+            </div>
+            <div className="ow-ftr">
+              <button className="ow-cancel" onClick={cancelOverwrite}>Cancelar</button>
+              <button className="ow-confirm" onClick={confirmOverwrite}>✓ Sí, reemplazar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pdfModal&&(
         <div className="pdf-dl-ov" onClick={e=>{if(e.target.className==="pdf-dl-ov")setPdfModal(null);}}>
           <div className="pdf-dl-modal">
@@ -3838,10 +4196,10 @@ ${procsHtml}
                     <div className="pd-pv">← PMBOK 6/7: {p.pv}</div>
                     <div className="pd-obj">{p.obj}</div>
                     <div className="pdf-btns-row"><button className="pdf-btn" onClick={e=>{e.stopPropagation();printProcessPDF(p);}}>🖨️ Generar PDF (Inputs + Outputs)</button></div>
-                    <div className="stabs">{["Inputs","T&T","Outputs"].map((l,i)=><button key={i} className={"stab"+(procTab===i?" on":"")} onClick={e=>{e.stopPropagation();setProcTab(i);}}>{l}</button>)}</div>
+                    <div className="stabs">{["Inputs","Técnicas y Herramientas (Tools)","Outputs"].map((l,i)=><button key={i} className={"stab"+(procTab===i?" on":"")} onClick={e=>{e.stopPropagation();setProcTab(i);}}>{l}</button>)}</div>
                     {procTab===0&&(<><div className="sl">Inputs ({(PR_IN[p.id]||[]).length})</div><div style={{fontSize:"10px",color:"#8BA8A3",marginBottom:"8px",lineHeight:"1.6"}}>Los items marcados 🔗 son outputs de otros procesos del proyecto. Haz clic para saltar al proceso origen.</div>{(PR_IN[p.id]||[]).map((inp,i)=>renderInputItem(inp,i,(procRef)=>{const tgt=PR.find(x=>x.id===procRef);if(tgt){setSelDom(tgt.d);setOpenProc(procRef);setProcTab(2);}}))}</>)}
                     {procTab===1&&(<><div className="sl">Herramientas & Técnicas ({p.tt.length})</div>{p.tt.map(tk=>{const t=TT[tk];if(!t)return null;return(<div key={tk} className="tti"><div className="tti-n">🔧 {t.n}<span className="tti-t">{t.t}</span></div><div className="tti-h">{t.how}</div></div>);})}</>)}
-                    {procTab===2&&(<><div className="sl">Outputs ({p.out.length})</div>{p.out.map((o,oi)=>(<div key={oi} className="out-item"><div className="out-n">📤 {o.n}{OUT_TPL[p.id+"_"+oi]&&<span className="out-tpl-badge">PMBOK 8</span>}</div><div style={{fontFamily:"JetBrains Mono,monospace",fontSize:"7px",color:"#6B7E94",letterSpacing:"1px",textTransform:"uppercase",marginBottom:"4px"}}>Campos del documento</div><div className="tpl-pills">{o.tpl.map((t,j)=><span key={j} className="pill">{t}</span>)}</div><div className="out-btns"><button className="out-tpl-btn" onClick={e=>{e.stopPropagation();openTplModal(p,o,oi);}}>📄 Ver Template</button></div>{noteEditor(p.id+"_"+oi)}</div>))}</>)}
+                    {procTab===2&&(<><div className="sl">Outputs ({p.out.length})</div>{p.out.map((o,oi)=>(<div key={oi} className="out-item"><div className="out-n">📤 {o.n}{OUT_TPL[p.id+"_"+oi]&&<span className="out-tpl-badge">PMBOK 8</span>}</div><div style={{fontFamily:"JetBrains Mono,monospace",fontSize:"12px",color:"#6B7E94",letterSpacing:"1px",textTransform:"uppercase",marginBottom:"4px"}}>Campos del documento</div><div className="tpl-pills">{o.tpl.map((t,j)=><span key={j} className="pill">{t}</span>)}</div><div className="out-btns"><button className="out-tpl-btn" onClick={e=>{e.stopPropagation();openTplModal(p,o,oi);}}>📄 Ver Template</button></div>{noteEditor(p.id+"_"+oi,p,o)}</div>))}</>)}
                   </div>)}
                 </div>);
               })}
@@ -3852,7 +4210,7 @@ ${procsHtml}
       </>)}
 
       {view==="tt"&&(<>
-        <div className="sec-hdr"><div className="sec-ey">PMBOK® 8 · Biblioteca de Técnicas y Herramientas</div><div className="sec-ti">T&T ({TT_LIST.length})</div></div>
+        <div className="sec-hdr"><div className="sec-ey">PMBOK® 8 · Biblioteca de Técnicas y Herramientas</div><div className="sec-ti">Técnicas y Herramientas (Tools) ({TT_LIST.length})</div></div>
         <div className="lib-wrap">
           <input className="lsrc" placeholder="Buscar técnica o herramienta..." value={libQ} onChange={e=>setLibQ(e.target.value)}/>
           <div className="chips">{TT_TYPES.map(t=><button key={t} className={"chip"+(libT===t?" on":"")} onClick={()=>setLibT(t)}>{t}</button>)}</div>
@@ -3862,7 +4220,7 @@ ${procsHtml}
             {isO&&<div className="lc-how">{t.how}</div>}
           </div>);})}
         </div>
-        <div className="footer">PMBOK® 8 · T&T · SPMS+ v2.0</div>
+        <div className="footer">PMBOK® 8 · Técnicas y Herramientas (Tools) · SPMS+ v2.0</div>
       </>)}
 
       {view==="plantillas"&&(<>
@@ -4027,7 +4385,7 @@ ${procsHtml}
       {view==="coorp"&&(
         <div className="coorp-root">
           <div className="coorp-subnav">
-            {[["identity","🏛 Identidad"],["pillars","⚡ Tres Pilares"],["system","⚙ Sistema"],["problems","✓ Problemas"],["clients","💼 Clientes"],["results","📊 Resultados"],["values","★ Valores"],["messages","💬 Mensajes"],["standards","🎯 Estándares"]].map(([k,l])=>(
+            {[["identity","🏛 Identidad"],["pillars","⚡ Tres Pilares"],["system","⚙ Sistema"],["problems","✓ Problemas"],["clients","💼 Clientes"],["results","📊 Resultados"],["values","★ Valores"],["messages","💬 Mensajes"],["standards","🎯 Estándares"],["referentials","📚 Referenciales"]].map(([k,l])=>(
               <button key={k} className={"coorp-snb"+(coorpSec===k?" on":"")} onClick={()=>setCoorpSec(k)}>{l}</button>
             ))}
           </div>
@@ -4272,6 +4630,133 @@ ${procsHtml}
                   <div key={t} className="coorp-cap"><span className="coorp-cap-icon">{ic}</span><div className="coorp-cap-body"><div className="coorp-cap-ti">{t}</div><div className="coorp-cap-d">{d}</div></div></div>
                 ))}
               </div>
+            </div>
+          </>)}
+
+          {coorpSec==="referentials"&&(<>
+            <div className="coorp-sec-hdr">
+              <div className="coorp-sec-num">Sección 10 · Activos Corporativos</div>
+              <div className="coorp-sec-ti">Referenciales de negocio</div>
+              <div className="coorp-sec-sub">Inputs externos y activos organizacionales compartidos por todos los proyectos. {can(cu,"editReferentials")?"Como sponsor, puedes editar descripciones, agregar enlaces y adjuntar PDFs.":"Solo lectura para tu rol — el sponsor puede actualizar estos activos."}</div>
+            </div>
+            <div className="coorp-body">
+              {!can(cu,"editReferentials")&&(
+                <div style={{background:"#0A1E30",border:"1px solid #14B8A633",borderRadius:"6px",padding:"10px 14px",marginBottom:"14px",fontSize:"12px",color:"#8BA8A3",display:"flex",alignItems:"center",gap:"8px"}}>
+                  <span style={{color:"#14B8A6",fontSize:"16px"}}>🔒</span>
+                  <span>Este contenido es mantenido por el administrador y es visible para todo el equipo.</span>
+                </div>
+              )}
+              {REF_DEFS.map(def=>{
+                const r=refs[def.id]||DEFAULT_REFERENTIALS[def.id];
+                const editing=refEditId===def.id;
+                const canEdit=can(cu,"editReferentials");
+                const flash=refSavedFlash===def.id;
+                return(
+                  <div key={def.id} style={{background:"#071525",border:"1px solid "+(flash?"#14B8A6":"#112234"),borderRadius:"8px",padding:"14px 16px",marginBottom:"12px",transition:"border-color .3s"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"12px",marginBottom:"8px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"10px",flex:1,minWidth:0}}>
+                        <span style={{fontSize:"18px"}}>{def.icon}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:"14px",fontWeight:600,color:"#E8F4F1",fontFamily:"Syne,sans-serif"}}>{def.name}</div>
+                          {r.updatedAt&&(
+                            <div style={{fontSize:"12px",color:"#6B8A87",marginTop:"2px"}}>
+                              Actualizado {new Date(r.updatedAt).toLocaleDateString("es-PA",{day:"2-digit",month:"short",year:"numeric"})} por {r.updatedBy||"—"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {canEdit&&!editing&&(
+                        <button onClick={()=>refBeginEdit(def.id)} style={{background:"transparent",border:"1px solid #14B8A644",color:"#14B8A6",borderRadius:"4px",padding:"5px 12px",fontSize:"12px",cursor:"pointer",fontWeight:600}}>✏️ Editar</button>
+                      )}
+                      {flash&&(
+                        <span style={{fontSize:"12px",color:"#14B8A6",fontWeight:600}}>✓ Guardado</span>
+                      )}
+                    </div>
+
+                    {editing?(
+                      <div style={{background:"#050C15",border:"1px solid #14B8A633",borderRadius:"6px",padding:"12px 14px",marginTop:"10px"}}>
+                        <div style={{fontSize:"12px",color:"#14B8A6",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"6px",fontWeight:600}}>Descripción</div>
+                        <textarea
+                          value={refForm.desc}
+                          onChange={e=>setRefForm(f=>({...f,desc:e.target.value}))}
+                          style={{width:"100%",minHeight:"70px",padding:"8px 10px",background:"#071525",border:"1px solid #1A3050",borderRadius:"4px",color:"#D4DDE8",fontSize:"12px",fontFamily:"inherit",resize:"vertical"}}
+                        />
+                        <div style={{display:"flex",gap:"8px",marginTop:"10px",justifyContent:"flex-end"}}>
+                          <button onClick={()=>setRefEditId(null)} style={{background:"transparent",border:"1px solid #1A3050",color:"#6B8A87",borderRadius:"4px",padding:"6px 14px",fontSize:"12px",cursor:"pointer"}}>Cancelar</button>
+                          <button onClick={refSaveEdit} style={{background:"#14B8A6",border:"none",color:"#050C15",borderRadius:"4px",padding:"6px 14px",fontSize:"12px",cursor:"pointer",fontWeight:600}}>Guardar cambios</button>
+                        </div>
+                      </div>
+                    ):(
+                      <div style={{fontSize:"13px",color:"#A8B4AB",lineHeight:"1.6",fontFamily:"JetBrains Mono,monospace"}}>{r.desc||def.defDesc}</div>
+                    )}
+
+                    {/* Links */}
+                    {(r.links||[]).length>0&&(
+                      <div style={{marginTop:"12px"}}>
+                        <div style={{fontSize:"12px",color:"#14B8A6",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"6px",fontWeight:600}}>Enlaces ({r.links.length})</div>
+                        {r.links.map(l=>(
+                          <div key={l.id} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0A1E30",border:"1px solid #112234",borderRadius:"4px",padding:"6px 10px",marginBottom:"4px"}}>
+                            <span style={{fontSize:"14px"}}>🔗</span>
+                            <a href={l.url} target="_blank" rel="noopener noreferrer" style={{flex:1,color:"#3A7BD5",fontSize:"12px",textDecoration:"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.label}</a>
+                            <span style={{fontSize:"12px",color:"#6B8A87",fontFamily:"JetBrains Mono,monospace",maxWidth:"40%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.url.replace(/^https?:\/\//,"")}</span>
+                            {canEdit&&editing&&(
+                              <button onClick={()=>refRemoveLink(def.id,l.id)} style={{background:"transparent",border:"none",color:"#E57373",cursor:"pointer",fontSize:"14px",padding:"0 4px"}}>🗑</button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Archivos adjuntos */}
+                    {(r.files||[]).length>0&&(
+                      <div style={{marginTop:"12px"}}>
+                        <div style={{fontSize:"12px",color:"#14B8A6",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"6px",fontWeight:600}}>Adjuntos ({r.files.length})</div>
+                        {r.files.map(f=>(
+                          <div key={f.id} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0A1E30",border:"1px solid #112234",borderRadius:"4px",padding:"6px 10px",marginBottom:"4px"}}>
+                            <span style={{fontSize:"14px"}}>📎</span>
+                            <button onClick={()=>refDownloadFile(f)} style={{flex:1,background:"transparent",border:"none",color:"#3A7BD5",fontSize:"12px",textAlign:"left",cursor:"pointer",padding:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</button>
+                            <span style={{fontSize:"12px",color:"#6B8A87",fontFamily:"JetBrains Mono,monospace"}}>{fmtFileSize(f.size)}</span>
+                            {canEdit&&editing&&(
+                              <button onClick={()=>refRemoveFile(def.id,f.id)} style={{background:"transparent",border:"none",color:"#E57373",cursor:"pointer",fontSize:"14px",padding:"0 4px"}}>🗑</button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Controles para agregar links y archivos en modo edición */}
+                    {editing&&canEdit&&(
+                      <div style={{marginTop:"12px",background:"#050C15",border:"1px solid #1A3050",borderRadius:"6px",padding:"10px 12px"}}>
+                        <div style={{fontSize:"12px",color:"#6B8A87",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"8px",fontWeight:600}}>Agregar recurso</div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr auto",gap:"6px",marginBottom:"8px"}}>
+                          <input
+                            placeholder="Etiqueta"
+                            value={refForm.linkLabel}
+                            onChange={e=>setRefForm(f=>({...f,linkLabel:e.target.value}))}
+                            style={{padding:"6px 8px",background:"#071525",border:"1px solid #1A3050",borderRadius:"4px",color:"#D4DDE8",fontSize:"12px"}}
+                          />
+                          <input
+                            placeholder="https://..."
+                            value={refForm.linkUrl}
+                            onChange={e=>setRefForm(f=>({...f,linkUrl:e.target.value}))}
+                            style={{padding:"6px 8px",background:"#071525",border:"1px solid #1A3050",borderRadius:"4px",color:"#D4DDE8",fontSize:"12px",fontFamily:"JetBrains Mono,monospace"}}
+                          />
+                          <button onClick={refAddLink} style={{background:"transparent",border:"1px solid #14B8A644",color:"#14B8A6",borderRadius:"4px",padding:"6px 12px",fontSize:"12px",cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>+ Enlace</button>
+                        </div>
+                        <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+                          <label style={{flex:1,background:"transparent",border:"1px dashed #14B8A644",borderRadius:"4px",padding:"6px 12px",fontSize:"12px",color:"#14B8A6",textAlign:"center",cursor:"pointer",fontWeight:600}}>
+                            📎 Adjuntar PDF (máx. 2 MB)
+                            <input type="file" accept="application/pdf,.pdf" onChange={refAddFile} style={{display:"none"}}/>
+                          </label>
+                        </div>
+                        {refFileErr&&(
+                          <div style={{marginTop:"8px",fontSize:"12px",color:"#E57373"}}>{refFileErr}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </>)}
 
