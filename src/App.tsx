@@ -1468,7 +1468,7 @@ body,html{background:#04141A;color:#CDD6E4;font-family:'Outfit',sans-serif}
 .coorp-closing-main{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:#FFF;line-height:1.4;margin-bottom:6px;padding:0 10px}
 .coorp-closing-main em{color:#14B8A6;font-style:normal}
 .coorp-closing-sub{font-size:12px;color:#8BA8A3;font-style:italic;margin-bottom:16px}
-.coorp-closing-pillars{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:16px}
+.coorp-closing-pillars{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:0 auto 16px;width:33.333%;max-width:33.333%;min-width:min(520px,92vw)}
 .coorp-closing-p{background:#04141A;border:1px solid #14B8A633;border-radius:5px;padding:10px 6px}
 .coorp-closing-pc{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;color:#14B8A6;letter-spacing:1.5px;margin-bottom:4px}
 .coorp-closing-pn{font-size:12px;color:#8BA8A3;font-style:italic;line-height:1.3}
@@ -1896,33 +1896,25 @@ function ItemModal({ item, onClose, onSave, onDelete, onAddAction }) {
 }
 
 // ── MAIN COMPONENT ──────────────────────────────────────────────────
-function DashboardSemanal({ project, mc, activities, boardCols, onMoveToBoom }) {
-  // Estado persistente por proyecto: si un usuario personaliza
-  // problemas/alertas/matriz/costos/milestones/backlog de un proyecto,
-  // esas ediciones se mantienen al navegar entre pestañas. Sin proyecto
-  // activo se usa la clave "_synthetic_" (datos de demostración).
+function DashboardSemanal({ project, mc, activities, boardCols, onMoveToBoom, dashboardData, onDashboardChange }) {
+  // El estado del dashboard por proyecto es controlado por el componente App
+  // (para que sincronice con Supabase). Aquí solo consumimos dashboardData y
+  // reportamos cambios vía onDashboardChange(projectKey, nextData).
   const projKey = project?.id || "_synthetic_";
-  const [allData, setAllData] = useState({ _synthetic_: JSON.parse(JSON.stringify(INITIAL_D)) });
   const [modal, setModal] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
   const [moveToast, setMoveToast] = useState(null);
   const TODAY = new Date("2026-04-22");
 
-  // Inicializar semilla para este proyecto la primera vez que se abre.
-  useEffect(() => {
-    if (!allData[projKey]) {
-      setAllData(prev => ({ ...prev, [projKey]: JSON.parse(JSON.stringify(INITIAL_D)) }));
-    }
-  }, [projKey]);
+  // data del proyecto actual: viene de props o fallback a INITIAL_D
+  const data = (dashboardData && dashboardData[projKey]) || INITIAL_D;
 
-  const data = allData[projKey] || INITIAL_D;
+  // setData: envía el cambio al padre
   const setData = (updaterOrValue) => {
-    setAllData(prev => {
-      const current = prev[projKey] || INITIAL_D;
-      const next = typeof updaterOrValue === "function" ? updaterOrValue(current) : updaterOrValue;
-      return { ...prev, [projKey]: next };
-    });
+    const current = data;
+    const next = typeof updaterOrValue === "function" ? updaterOrValue(current) : updaterOrValue;
+    if (onDashboardChange) onDashboardChange(projKey, next);
   };
 
   const findItem = (id) => {
@@ -2639,6 +2631,9 @@ export default function App(){
   const [tmplCat,setTmplCat]=useState("All");
   const [coorpSec,setCoorpSec]=useState("identity");
   const [refs,setRefs]=useState(DEFAULT_REFERENTIALS);
+  // Estado del Dashboard por proyecto: { [projectId]: { problemas, alertas, matriz, ... } }
+  // Lo maneja App porque sincroniza con Supabase (tabla dashboard_state).
+  const [dashboardState,setDashboardState]=useState({_synthetic_:JSON.parse(JSON.stringify(INITIAL_D))});
   const [refEditId,setRefEditId]=useState(null);
   const [refForm,setRefForm]=useState({desc:"",linkLabel:"",linkUrl:""});
   const [refFileErr,setRefFileErr]=useState(null);
@@ -2722,11 +2717,243 @@ export default function App(){
             setProjects(mapped);
             try{await window.storage.set("spms_v2_proj",JSON.stringify({list:mapped,active:null}));}catch{}
           }
+
+          // Pull de las 4 tablas nuevas (notes, templates, referentials, dashboard_state)
+          // Cada fallo es no-fatal: la app sigue con el cache de localStorage.
+          try{
+            const{data:notesRows}=await sb().from("project_notes").select("project_id,notes");
+            if(notesRows){
+              const byProj={};
+              notesRows.forEach(r=>{byProj[r.project_id]=r.notes||{};});
+              setNotes(byProj);
+              try{await window.storage.set("spms_v2_notes",JSON.stringify(byProj));}catch{}
+            }
+          }catch(e){console.warn("Pull notes falló:",e);}
+
+          try{
+            const{data:tmplRows}=await sb().from("project_templates").select("project_id,templates");
+            if(tmplRows){
+              const byProj={};
+              tmplRows.forEach(r=>{byProj[r.project_id]=r.templates||{};});
+              setTmpl(byProj);
+              try{await window.storage.set("spms_v2_tmpl",JSON.stringify(byProj));}catch{}
+            }
+          }catch(e){console.warn("Pull templates falló:",e);}
+
+          try{
+            const{data:refsRows}=await sb().from("referentials").select("*");
+            if(refsRows){
+              const byId={...DEFAULT_REFERENTIALS};
+              refsRows.forEach(r=>{
+                byId[r.id]={
+                  desc:r.description||"",
+                  links:r.links||[],
+                  files:r.files||[],
+                  updatedAt:r.updated_at||null,
+                  updatedBy:r.updated_by||null,
+                };
+              });
+              setRefs(byId);
+              try{await window.storage.set("spms_v2_referentials",JSON.stringify(byId));}catch{}
+            }
+          }catch(e){console.warn("Pull referentials falló:",e);}
+
+          try{
+            const{data:dashRows}=await sb().from("dashboard_state").select("*");
+            if(dashRows){
+              const byProj={_synthetic_:JSON.parse(JSON.stringify(INITIAL_D))};
+              dashRows.forEach(r=>{
+                byProj[r.project_id]={
+                  problemas:r.problemas||[],
+                  alertas:r.alertas||[],
+                  matrizAcciones:r.matriz_acciones||[],
+                  costos:r.costos||[],
+                  milestones:r.milestones||[],
+                  backlog:r.backlog||[],
+                  actividades:r.actividades||[],
+                };
+              });
+              setDashboardState(byProj);
+              try{await window.storage.set("spms_v2_dashboard",JSON.stringify(byProj));}catch{}
+            }
+          }catch(e){console.warn("Pull dashboard_state falló:",e);}
+
+          // Pull BOOM: boards + activities + activity_logs
+          try{
+            const{data:boardRows}=await sb().from("boards").select("*");
+            const{data:actRows}=await sb().from("activities").select("*");
+            const{data:logRows}=await sb().from("activity_logs").select("*").order("ts",{ascending:true});
+            if(boardRows||actRows||logRows){
+              const boards=(boardRows||[]).map(b=>({
+                id:b.id,name:b.name,projectId:b.project_id||null,color:b.color||"#14B8A6",
+                cols:b.cols||[],members:b.members||[],createdBy:b.created_by,
+                createdAt:b.created_at,
+              }));
+              const acts={};
+              (actRows||[]).forEach(a=>{
+                const key="board_"+a.board_id;
+                if(!acts[key])acts[key]=[];
+                acts[key].push({
+                  id:a.id,boardId:a.board_id,projId:a.project_id||"",colId:a.col_id,
+                  title:a.title||"",desc:a.description||"",priority:a.priority||"medium",
+                  progress:a.progress||0,assignees:a.assignees||[],tags:a.tags||[],
+                  startDate:a.start_date||"",dueDate:a.due_date||"",
+                  estimatedH:a.estimated_h||0,order:a.order||0,
+                  createdBy:a.created_by,createdAt:a.created_at,updatedAt:a.updated_at,
+                });
+              });
+              const logs={};
+              (logRows||[]).forEach(l=>{
+                if(!logs[l.activity_id])logs[l.activity_id]=[];
+                logs[l.activity_id].push({
+                  id:l.id,actId:l.activity_id,userId:l.user_id,action:l.action,
+                  field:l.field||"",old:l.old_value||"",new:l.new_value||"",ts:l.ts,
+                });
+              });
+              setBoom({boards,acts,logs});
+              try{await window.storage.set("spms_boom",JSON.stringify({boards,acts,logs}));}catch{}
+            }
+          }catch(e){console.warn("Pull BOOM falló:",e);}
+
           setSyncStatus(SYNC_STATUS.synced);setSyncMsg("Sincronizado: "+new Date().toLocaleTimeString("es-PA"));
         }catch(e){setSyncStatus(SYNC_STATUS.error);setSyncMsg("Error: "+(e.message||""));}
       })();
     }
   // eslint-disable-next-line
+  },[sbReady,cu?.id,authChecked]);
+
+  /* ─ REALTIME SUBSCRIPTIONS ─
+     Se activa cuando Supabase está conectado y el usuario está autenticado.
+     Cada cambio en las 6 tablas se propaga a otros usuarios sin refrescar.
+     Los canales se cierran limpiamente al hacer logout o cambiar de usuario. */
+  useEffect(()=>{
+    if(!sbReady||!cu||!authChecked||!_sb)return;
+    const client=sb();
+
+    // Helper: aplica un cambio recibido de realtime a un state setter.
+    // payload.eventType es "INSERT" | "UPDATE" | "DELETE"
+    const handleNotesChange=(payload)=>{
+      const{eventType,new:newRow,old:oldRow}=payload;
+      setNotes(prev=>{
+        const next={...prev};
+        if(eventType==="DELETE"&&oldRow?.project_id){delete next[oldRow.project_id];}
+        else if(newRow?.project_id){next[newRow.project_id]=newRow.notes||{};}
+        try{window.storage.set("spms_v2_notes",JSON.stringify(next));}catch{}
+        return next;
+      });
+    };
+    const handleTmplChange=(payload)=>{
+      const{eventType,new:newRow,old:oldRow}=payload;
+      setTmpl(prev=>{
+        const next={...prev};
+        if(eventType==="DELETE"&&oldRow?.project_id){delete next[oldRow.project_id];}
+        else if(newRow?.project_id){next[newRow.project_id]=newRow.templates||{};}
+        try{window.storage.set("spms_v2_tmpl",JSON.stringify(next));}catch{}
+        return next;
+      });
+    };
+    const handleRefsChange=(payload)=>{
+      const{eventType,new:newRow,old:oldRow}=payload;
+      setRefs(prev=>{
+        const next={...prev};
+        if(eventType==="DELETE"&&oldRow?.id){
+          next[oldRow.id]=DEFAULT_REFERENTIALS[oldRow.id]||{desc:"",links:[],files:[]};
+        }else if(newRow?.id){
+          next[newRow.id]={
+            desc:newRow.description||"",
+            links:newRow.links||[],
+            files:newRow.files||[],
+            updatedAt:newRow.updated_at||null,
+            updatedBy:newRow.updated_by||null,
+          };
+        }
+        try{window.storage.set("spms_v2_referentials",JSON.stringify(next));}catch{}
+        return next;
+      });
+    };
+    const handleDashChange=(payload)=>{
+      const{eventType,new:newRow,old:oldRow}=payload;
+      setDashboardState(prev=>{
+        const next={...prev};
+        if(eventType==="DELETE"&&oldRow?.project_id){delete next[oldRow.project_id];}
+        else if(newRow?.project_id){
+          next[newRow.project_id]={
+            problemas:newRow.problemas||[],
+            alertas:newRow.alertas||[],
+            matrizAcciones:newRow.matriz_acciones||[],
+            costos:newRow.costos||[],
+            milestones:newRow.milestones||[],
+            backlog:newRow.backlog||[],
+            actividades:newRow.actividades||[],
+          };
+        }
+        try{window.storage.set("spms_v2_dashboard",JSON.stringify(next));}catch{}
+        return next;
+      });
+    };
+    // BOOM: boards + activities comparten canal ligero; logs son append-only
+    const handleBoardChange=(payload)=>{
+      const{eventType,new:newRow,old:oldRow}=payload;
+      setBoom(prev=>{
+        const next={...prev,boards:[...(prev.boards||[])]};
+        if(eventType==="DELETE"&&oldRow?.id){
+          next.boards=next.boards.filter(b=>b.id!==oldRow.id);
+        }else if(newRow?.id){
+          const idx=next.boards.findIndex(b=>b.id===newRow.id);
+          const mapped={
+            id:newRow.id,name:newRow.name,projectId:newRow.project_id||null,
+            color:newRow.color||"#14B8A6",cols:newRow.cols||[],members:newRow.members||[],
+            createdBy:newRow.created_by,createdAt:newRow.created_at,
+          };
+          if(idx>=0)next.boards[idx]=mapped;
+          else next.boards.push(mapped);
+        }
+        try{window.storage.set("spms_boom",JSON.stringify(next));}catch{}
+        return next;
+      });
+    };
+    const handleActivityChange=(payload)=>{
+      const{eventType,new:newRow,old:oldRow}=payload;
+      setBoom(prev=>{
+        const next={...prev,acts:{...(prev.acts||{})}};
+        const boardKey=newRow?.board_id?"board_"+newRow.board_id:oldRow?.board_id?"board_"+oldRow.board_id:null;
+        if(!boardKey)return prev;
+        next.acts[boardKey]=[...(next.acts[boardKey]||[])];
+        if(eventType==="DELETE"&&oldRow?.id){
+          next.acts[boardKey]=next.acts[boardKey].filter(a=>a.id!==oldRow.id);
+        }else if(newRow?.id){
+          const mapped={
+            id:newRow.id,boardId:newRow.board_id,projId:newRow.project_id||"",
+            colId:newRow.col_id,title:newRow.title||"",desc:newRow.description||"",
+            priority:newRow.priority||"medium",progress:newRow.progress||0,
+            assignees:newRow.assignees||[],tags:newRow.tags||[],
+            startDate:newRow.start_date||"",dueDate:newRow.due_date||"",
+            estimatedH:newRow.estimated_h||0,order:newRow.order||0,
+            createdBy:newRow.created_by,createdAt:newRow.created_at,updatedAt:newRow.updated_at,
+          };
+          const idx=next.acts[boardKey].findIndex(a=>a.id===newRow.id);
+          if(idx>=0)next.acts[boardKey][idx]=mapped;
+          else next.acts[boardKey].push(mapped);
+        }
+        try{window.storage.set("spms_boom",JSON.stringify(next));}catch{}
+        return next;
+      });
+    };
+
+    // Crear un canal único por sesión y suscribirse a las 6 tablas
+    const channel=client
+      .channel("spms_v2_sync_"+cu.id)
+      .on("postgres_changes",{event:"*",schema:"public",table:"project_notes"},handleNotesChange)
+      .on("postgres_changes",{event:"*",schema:"public",table:"project_templates"},handleTmplChange)
+      .on("postgres_changes",{event:"*",schema:"public",table:"referentials"},handleRefsChange)
+      .on("postgres_changes",{event:"*",schema:"public",table:"dashboard_state"},handleDashChange)
+      .on("postgres_changes",{event:"*",schema:"public",table:"boards"},handleBoardChange)
+      .on("postgres_changes",{event:"*",schema:"public",table:"activities"},handleActivityChange)
+      .subscribe();
+
+    return()=>{
+      try{client.removeChannel(channel);}catch{}
+    };
   },[sbReady,cu?.id,authChecked]);
 
   /* ─ M&C useMemo hooks — deben estar antes de los early returns ─ */
@@ -2901,14 +3128,88 @@ export default function App(){
     try{await window.storage.set("spms_v2_proj",JSON.stringify({list,active}));}catch{}
     if(sbReady&&cu&&pushedProj){pushProjectToSupabase(pushedProj);}
   };
-  const saveNotes=async n=>{setNotes(n);try{await window.storage.set("spms_v2_notes",JSON.stringify(n));}catch{}};
-  const saveTmplAll=async t=>{setTmpl(t);try{await window.storage.set("spms_v2_tmpl",JSON.stringify(t));}catch{}};
+  const saveNotes=async n=>{
+    setNotes(n);
+    try{await window.storage.set("spms_v2_notes",JSON.stringify(n));}catch{}
+    // Sync a Supabase: n = { [projectId]: { [outputKey]: "texto" } }
+    if(sbReady&&cu&&activeId&&n[activeId]){
+      try{
+        await sb().from("project_notes").upsert({
+          project_id:activeId,
+          notes:n[activeId]||{},
+          updated_by:cu.id,
+        });
+      }catch(e){console.warn("Notes sync failed (localStorage sigue OK):",e);}
+    }
+  };
+
+  const saveTmplAll=async t=>{
+    setTmpl(t);
+    try{await window.storage.set("spms_v2_tmpl",JSON.stringify(t));}catch{}
+    // Sync a Supabase
+    if(sbReady&&cu&&activeId&&t[activeId]){
+      try{
+        await sb().from("project_templates").upsert({
+          project_id:activeId,
+          templates:t[activeId]||{},
+          updated_by:cu.id,
+        });
+      }catch(e){console.warn("Templates sync failed (localStorage sigue OK):",e);}
+    }
+  };
 
   /* ─── REFERENTIALS (sponsor/admin only) ─── */
   const saveRefs=async(next)=>{
     setRefs(next);
     try{await window.storage.set("spms_v2_referentials",JSON.stringify(next));}catch{}
+    // Sync a Supabase: upsert los 5 referenciales en batch
+    if(sbReady&&cu){
+      try{
+        const rows=REF_DEFS.map(def=>{
+          const r=next[def.id]||DEFAULT_REFERENTIALS[def.id];
+          return{
+            id:def.id,
+            name:def.name,
+            icon:def.icon,
+            description:r.desc||def.defDesc,
+            links:r.links||[],
+            files:r.files||[],
+            updated_by:cu.id,
+          };
+        });
+        await sb().from("referentials").upsert(rows);
+      }catch(e){console.warn("Referentials sync failed (localStorage sigue OK):",e);}
+    }
   };
+
+  /* ─── DASHBOARD STATE (por proyecto) ─── */
+  // El componente DashboardSemanal llama a esto cuando edita problemas/alertas/etc.
+  // projKey es el id del proyecto (o "_synthetic_" si no hay proyecto activo).
+  const handleDashboardChange=async(projKey,nextData)=>{
+    setDashboardState(prev=>{
+      const merged={...prev,[projKey]:nextData};
+      // Guardar cache local
+      try{window.storage.set("spms_v2_dashboard",JSON.stringify(merged));}catch{}
+      return merged;
+    });
+    // Sync a Supabase solo si es un proyecto real (no sintético)
+    if(sbReady&&cu&&projKey&&projKey!=="_synthetic_"){
+      try{
+        await sb().from("dashboard_state").upsert({
+          project_id:projKey,
+          problemas:nextData.problemas||[],
+          alertas:nextData.alertas||[],
+          matriz_acciones:nextData.matrizAcciones||[],
+          costos:nextData.costos||[],
+          milestones:nextData.milestones||[],
+          backlog:nextData.backlog||[],
+          actividades:nextData.actividades||[],
+          updated_by:cu.id,
+        });
+      }catch(e){console.warn("Dashboard sync failed (localStorage sigue OK):",e);}
+    }
+  };
+
   const refBeginEdit=(id)=>{
     if(!can(cu,"editReferentials"))return;
     const r=refs[id]||DEFAULT_REFERENTIALS[id];
@@ -2983,7 +3284,69 @@ export default function App(){
     }catch(e){console.error(e);}
   };
   const fmtFileSize=(b)=>{if(!b)return"—";if(b<1024)return b+" B";if(b<1048576)return(b/1024).toFixed(1)+" KB";return(b/1048576).toFixed(2)+" MB";};
-  const saveBoom=async b=>{setBoom(b);try{await window.storage.set("spms_boom",JSON.stringify(b));}catch{}};
+  const saveBoom=async b=>{
+    setBoom(b);
+    try{await window.storage.set("spms_boom",JSON.stringify(b));}catch{}
+    // Sync a Supabase. Estrategia simple full-replace para minimizar bugs de diff:
+    // upsert todos los boards + todas las activities + insert de logs nuevos.
+    // Esta función se llama muchas veces, pero el volumen por usuario es bajo
+    // (decenas de cards, no miles) y upsert es idempotente.
+    if(sbReady&&cu){
+      try{
+        // 1. Upsert boards
+        if(b.boards&&b.boards.length>0){
+          const boardRows=b.boards.map(bd=>({
+            id:bd.id,
+            name:bd.name,
+            project_id:bd.projectId||null,
+            color:bd.color||"#14B8A6",
+            cols:bd.cols||[],
+            members:bd.members||[],
+            created_by:cu.id,
+          }));
+          await sb().from("boards").upsert(boardRows);
+        }
+        // 2. Upsert activities (aplanar b.acts que es {boardKey: [act,...]})
+        const allActs=Object.values(b.acts||{}).flat();
+        if(allActs.length>0){
+          const actRows=allActs.map(a=>({
+            id:a.id,
+            board_id:a.boardId,
+            project_id:a.projId||null,
+            col_id:a.colId,
+            title:a.title||"",
+            description:a.desc||"",
+            priority:a.priority||"medium",
+            progress:Number(a.progress)||0,
+            assignees:a.assignees||[],
+            tags:a.tags||[],
+            start_date:a.startDate||null,
+            due_date:a.dueDate||null,
+            estimated_h:Number(a.estimatedH)||null,
+            order:a.order||Date.now(),
+            created_by:cu.id,
+          }));
+          await sb().from("activities").upsert(actRows);
+        }
+        // 3. Activity logs: solo INSERT de logs nuevos (append-only)
+        // Identificamos nuevos comparando con boom previo; en full-replace
+        // mode simplemente upsert por id (logs tienen id único).
+        const allLogs=Object.values(b.logs||{}).flat();
+        if(allLogs.length>0){
+          const logRows=allLogs.map(l=>({
+            id:l.id,
+            activity_id:l.actId,
+            user_id:cu.id,
+            action:l.action||"",
+            field:l.field||null,
+            old_value:l.old||null,
+            new_value:l.new||null,
+          }));
+          await sb().from("activity_logs").upsert(logRows);
+        }
+      }catch(e){console.warn("BOOM sync failed (localStorage sigue OK):",e);}
+    }
+  };
 
   /* ─ SUPABASE CONFIG & AUTH ─ */
   const saveSbConfig=async()=>{
@@ -4379,6 +4742,8 @@ ${procsHtml}
           activities={activeId?allActs.filter(a=>a.projId===activeId):[]}
           boardCols={boomBoard?.cols||SCOLS}
           onMoveToBoom={handleBacklogToBoom}
+          dashboardData={dashboardState}
+          onDashboardChange={handleDashboardChange}
         />
       )}
 
